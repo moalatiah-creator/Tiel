@@ -1,0 +1,182 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens expressed as CSS variables.
+ *
+ * Why duplicate these here when they're already in tailwind.config.ts?
+ *   - Tailwind references these variables, so a single source of truth
+ *     flows in both directions (Tailwind utility → var → themable value).
+ *   - Non-Tailwind usage (inline styles, third-party libs like Mapbox
+ *     popups or react-day-picker) can still read tokens via `var(--…)`.
+ *   - Theming: flipping the `data-theme` attribute on <html> swaps all
+ *     tokens at once with no cascade surprises.
+ */
+:root {
+  /* Brand */
+  --color-rausch: #ff5a5f;
+  --color-rausch-dark: #e00b41;
+
+  /* Neutrals */
+  --color-hof: #484848;
+  --color-foggy: #767676;
+  --color-line: #ebebeb;
+  --color-surface: #f7f7f7;
+  --color-bg: #ffffff;
+
+  /* Semantic */
+  --color-success: #008a05;
+  --color-star: #ffb400;
+
+  /* Layout */
+  --header-height: 80px;
+  --header-height-condensed: 64px;
+}
+
+/*
+ * Dark mode tokens. Airbnb doesn't ship a dark theme yet, but the spec
+ * asks us to *support* it. These values are opinionated — we deepen
+ * neutrals and desaturate Rausch slightly so CTAs don't buzz on black.
+ */
+[data-theme="dark"] {
+  --color-rausch: #ff6b70;
+  --color-rausch-dark: #ff8a8e;
+  --color-hof: #e6e6e6;
+  --color-foggy: #a8a8a8;
+  --color-line: #2b2b2b;
+  --color-surface: #1a1a1a;
+  --color-bg: #0e0e0e;
+  --color-success: #2dcc4a;
+  --color-star: #ffc542;
+}
+
+@layer base {
+  html {
+    /* Prevent layout shift when modals lock scroll by always reserving
+       gutter. This is what Airbnb does on the listing detail lightbox. */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    background: var(--color-bg);
+    color: var(--color-hof);
+    font-family: var(--font-sans), "Circular Std", "Nunito Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "kern", "liga", "ss01";
+  }
+
+  /* Airbnb uses a custom focus ring (black on white halo) rather than the
+     browser default. We only show it for keyboard navigation via :focus-visible. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid #000;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  /* Hairline borders are 1px on Airbnb. On retina devices a true 0.5px
+     hairline looks sharper, but we keep 1px for consistency with their
+     current prod. */
+  hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+  }
+}
+
+@layer components {
+  /*
+   * Primary CTA — the Rausch gradient pill used on Reserve, Search, etc.
+   * We bake this as a component class because it appears in ~8 places
+   * and the gradient + hover easing are too specific to leave to ad hoc
+   * Tailwind strings.
+   */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-btn px-6 py-3 font-semibold text-white transition-all duration-200 ease-airbnb;
+    background-image: linear-gradient(
+      to right,
+      #e61e4d 0%,
+      #e31c5f 50%,
+      #d70466 100%
+    );
+  }
+  .btn-primary:hover {
+    background-image: linear-gradient(
+      to right,
+      #d70466 0%,
+      #bd1e59 50%,
+      #bd1e59 100%
+    );
+    box-shadow: 0 6px 16px rgba(230, 30, 77, 0.24);
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  /* Secondary button: white with 1px hof border, used on "Show all photos"
+     and most neutral actions. */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-btn border border-hof bg-white px-4 py-2 text-sm font-semibold text-hof transition-colors duration-150;
+  }
+  .btn-secondary:hover {
+    background: var(--color-surface);
+  }
+
+  /* Ghost text link — used for "Show more" and inline nav text. */
+  .link-underline {
+    @apply font-medium text-hof underline underline-offset-4;
+  }
+
+  /*
+   * Skeleton shimmer. Applied to <div className="skeleton" /> blocks that
+   * mirror the shape of a loaded card. We use a linear-gradient instead of
+   * pulsing opacity because the gradient moves the light across the block,
+   * which feels more like Airbnb's loading state.
+   */
+  .skeleton {
+    @apply rounded-card;
+    background: linear-gradient(
+      90deg,
+      #f0f0f0 0%,
+      #f7f7f7 40%,
+      #f0f0f0 80%
+    );
+    background-size: 800px 100%;
+    animation: shimmer 1.6s linear infinite;
+  }
+
+  /*
+   * Content container — 1128px max width, horizontally padded. Most
+   * Airbnb pages are built in this frame; only the nav and image gallery
+   * bleed to the edge.
+   */
+  .container-tiel {
+    @apply mx-auto w-full max-w-[1128px] px-6 lg:px-10;
+  }
+}
+
+/*
+ * Utility: tight numeric-feature text used on ratings. OpenType `tnum`
+ * keeps "4.92" digits the same width as "10.0" so cards don't jiggle.
+ */
+.num {
+  font-feature-settings: "tnum" 1;
+}
+
+/*
+ * Hide scrollbars on horizontally scrollable filter-pill rows. The pills
+ * still scroll with the wheel / trackpad, they just have no visible bar.
+ */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
