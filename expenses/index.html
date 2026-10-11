@@ -59,7 +59,21 @@ form{display:grid}
 .toast{left:50%;bottom:calc(24px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;font-size:.9375rem;font-weight:500;transform:translate(-50%,0) scale(1);transition:transform .35s cubic-bezier(.2,.9,.3,1),opacity .25s,filter .35s}
 .toast.off{transform:translate(-50%,24px) scale(.96);opacity:0;filter:blur(6px);pointer-events:none}
 .empty{color:var(--muted);padding:16px}
-@media (prefers-reduced-motion:reduce){.toast{transition:opacity .2s}.toast.off{transform:translate(-50%,0)}}
+/* Motion: one curve family (fast out, gentle settle) so everything moves like the same material */
+:root{--settle:cubic-bezier(.2,.9,.3,1)}
+@keyframes rise{from{transform:translateY(14px) scale(.985);opacity:0;filter:blur(4px)}}
+@keyframes growX{from{transform:scaleX(0)}}
+@keyframes growY{from{transform:scaleY(0)}}
+@keyframes insert{from{max-height:0;opacity:0;transform:translateY(-8px)}to{max-height:72px}}
+@keyframes pop{40%{transform:scale(1.04)}}
+.load section{animation:rise .6s var(--settle) backwards;animation-delay:calc(var(--i,0)*60ms)}
+.anim .track i{transform-origin:left;animation:growX .7s var(--settle) backwards;animation-delay:calc(var(--i)*50ms + 80ms)}
+.anim .days i{transform-origin:bottom;animation:growY .6s var(--settle) backwards;animation-delay:calc(var(--i)*12ms)}
+.list li.fresh{animation:insert .45s var(--settle)}
+.list li.fresh .icon{animation:pop .5s var(--settle) .15s}
+.hero.bump{animation:pop .4s var(--settle)}
+.add:active{transform:scale(.98)}
+@media (prefers-reduced-motion:reduce){.toast{transition:opacity .2s}.toast.off{transform:translate(-50%,0)}*{animation:none!important}}
 @media (prefers-reduced-transparency:reduce){header,.tip,.toast{backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--panel)}}
 @media (prefers-contrast:more){.group,.toast{border:1px solid var(--ink)}:root{--line:var(--muted)}}
 </style>
@@ -133,29 +147,36 @@ function spring(from,to,v,set,{damping=1,response=.35}={},done){
 }
 const rubber=(o,d,c=.55)=>o*d*c/(d+c*Math.abs(o)), project=v=>v/1000*.998/(1-.998);
 
-let meterX=0,stopMeter=()=>{};
-function render(){
+let meterX=0,stopMeter=()=>{},shown=0,stopCount=()=>{},fresh=null;
+function render(o={}){
+  const wrap=document.querySelector(".wrap");
+  if(o.anim){wrap.classList.remove("anim");void wrap.offsetWidth;wrap.classList.add("anim");clearTimeout(wrap._t);wrap._t=setTimeout(()=>wrap.classList.remove("anim"),1200)}
+  if(o.dir&&!reduce)wrap.querySelectorAll(".group").forEach((g,i)=>g.animate([{transform:`translateX(${o.dir*28}px)`,opacity:0},{transform:"none",opacity:1}],{duration:420,delay:i*30,easing:"cubic-bezier(.2,.9,.3,1)",fill:"backwards"}));
   const key=ym(view), rows=items.filter(e=>e.date.startsWith(key)).sort((a,b)=>b.date.localeCompare(a.date));
   const total=rows.reduce((s,e)=>s+e.amount,0), pct=budget?total/budget:0;
   $("mlabel").textContent=view.toLocaleString("en",{month:"long",year:"numeric",timeZone:"UTC"});
-  $("total").innerHTML=`${fmt(total)} <small>SAR</small>`;
+  stopCount();stopCount=spring(shown,total,0,x=>{shown=x;$("total").innerHTML=`${fmt(Math.max(x,0))} <small>SAR</small>`},{response:.6});
+  if(o.bump){$("total").classList.remove("bump");void $("total").offsetWidth;$("total").classList.add("bump")}
   $("meter").className="meter"+(pct>1?" over":"");
   stopMeter(); stopMeter=spring(meterX,Math.min(pct,1),0,x=>{meterX=x;$("meter").firstChild.style.transform=`scaleX(${Math.max(x,0)})`},{response:.5});
   $("left").textContent=budget?(pct>1?`${fmt(total-budget)} SAR over budget`:`${fmt(budget-total)} SAR left · ${Math.round(pct*100)}% used`):"No budget set";
   $("sample").hidden=!items.some(e=>e.sample);
-  $("list").innerHTML=rows.length?rows.map(e=>`<li data-id="${e.id}"><div class="del" aria-hidden="true">Delete</div><div class="row"><span class="icon" style="background:${color(e.cat)}">${e.cat[0]}</span><span>${e.desc.replace(/</g,"&lt;")}<br><span class="meta">${e.cat} · ${+e.date.slice(8)} ${view.toLocaleString("en",{month:"short",timeZone:"UTC"})}</span></span><span class="num">${fmt(e.amount)}</span></div></li>`).join(""):`<li class="empty">Nothing logged this month. Add your first expense.</li>`;
+  $("list").innerHTML=rows.length?rows.map(e=>`<li data-id="${e.id}"${e.id===fresh?' class="fresh"':""}><div class="del" aria-hidden="true">Delete</div><div class="row"><span class="icon" style="background:${color(e.cat)}">${e.cat[0]}</span><span>${e.desc.replace(/</g,"&lt;")}<br><span class="meta">${e.cat} · ${+e.date.slice(8)} ${view.toLocaleString("en",{month:"short",timeZone:"UTC"})}</span></span><span class="num">${fmt(e.amount)}</span></div></li>`).join(""):`<li class="empty">Nothing logged this month. Add your first expense.</li>`;
   const by=CATS.map(c=>[c,rows.filter(e=>e.cat===c).reduce((s,e)=>s+e.amount,0)]).filter(x=>x[1]).sort((a,b)=>b[1]-a[1]), max=by[0]?.[1]||1;
-  $("bars").innerHTML=by.length?by.map(([c,v])=>`<div class="cat"><span>${c}</span><span class="track"><i style="width:${v/max*100}%;background:${color(c)}"></i></span><span class="num" style="text-align:right">${fmt(v)}</span></div>`).join(""):`<p class="empty" style="padding:0">Categories appear once you add expenses.</p>`;
+  $("bars").innerHTML=by.length?by.map(([c,v],i)=>`<div class="cat"><span>${c}</span><span class="track"><i style="--i:${i};width:${v/max*100}%;background:${color(c)}"></i></span><span class="num" style="text-align:right">${fmt(v)}</span></div>`).join(""):`<p class="empty" style="padding:0">Categories appear once you add expenses.</p>`;
   const n=new Date(Date.UTC(view.getUTCFullYear(),view.getUTCMonth()+1,0)).getUTCDate(), day=Array(n).fill(0);
   rows.forEach(e=>day[+e.date.slice(8)-1]+=e.amount); const dm=Math.max(...day)||1;
-  $("days").innerHTML=day.map((v,i)=>`<i style="height:${v/dm*100}%" data-t="${i+1}: ${fmt(v)} SAR"></i>`).join(""); $("lastday").textContent=n;
+  $("days").innerHTML=day.map((v,i)=>`<i style="--i:${i};height:${v/dm*100}%" data-t="${i+1}: ${fmt(v)} SAR"></i>`).join(""); $("lastday").textContent=n; fresh=null;
 }
 
 /* Swipe-to-delete: 1:1 tracking, rubber-band past the edge, momentum projection decides, velocity handed to the spring */
 let toastTimer,lastDeleted;
-function remove(id){const i=items.findIndex(x=>x.id==id);lastDeleted=[i,items[i]];items.splice(i,1);save();
+/* Collapse the row's height before it leaves, so the list closes the gap instead of jumping */
+function remove(id){const li=$("list").querySelector(`li[data-id="${id}"]`);
+  if(!li||reduce)return drop(id);li.animate([{height:li.offsetHeight+"px",opacity:1},{height:0,opacity:0}],{duration:280,easing:"cubic-bezier(.2,.9,.3,1)"}).onfinish=()=>drop(id)}
+function drop(id){const i=items.findIndex(x=>x.id==id);lastDeleted=[i,items[i]];items.splice(i,1);save();
   $("tmsg").textContent=`Deleted “${lastDeleted[1].desc}”`;$("toast").classList.remove("off");clearTimeout(toastTimer);toastTimer=setTimeout(()=>$("toast").classList.add("off"),4000)}
-$("undo").onclick=()=>{if(lastDeleted){items.splice(lastDeleted[0],0,lastDeleted[1]);lastDeleted=null;save()}$("toast").classList.add("off")};
+$("undo").onclick=()=>{if(lastDeleted){items.splice(lastDeleted[0],0,lastDeleted[1]);fresh=lastDeleted[1].id;lastDeleted=null;save()}$("toast").classList.add("off")};
 $("list").addEventListener("pointerdown",e=>{
   const li=e.target.closest("li[data-id]");if(!li)return;const row=li.querySelector(".row"),w=li.offsetWidth;
   let x=+(row.dataset.x||0),startX=e.clientX-x,startY=e.clientY,hist=[],locked=null;
@@ -174,11 +195,13 @@ $("list").addEventListener("pointerdown",e=>{
 $("list").addEventListener("keydown",e=>{const li=e.target.closest("li[data-id]");if(li&&(e.key==="Delete"||e.key==="Backspace"))remove(li.dataset.id)});
 new MutationObserver(()=>$("list").querySelectorAll("li[data-id]").forEach(li=>{li.tabIndex=0;li.setAttribute("aria-label",li.innerText.replace(/\s+/g," ")+". Press Delete to remove")})).observe($("list"),{childList:true});
 
-$("f").onsubmit=e=>{e.preventDefault();items=items.filter(x=>!x.sample);items.push({id:Date.now(),desc:$("desc").value.trim(),amount:+$("amount").value,cat:$("cat").value,date:$("date").value});$("desc").value=$("amount").value="";view=new Date($("date").value.slice(0,7)+"-01T00:00Z");save();$("desc").focus()};
+$("f").onsubmit=e=>{e.preventDefault();items=items.filter(x=>!x.sample);fresh=Date.now();items.push({id:fresh,desc:$("desc").value.trim(),amount:+$("amount").value,cat:$("cat").value,date:$("date").value});$("desc").value=$("amount").value="";view=new Date($("date").value.slice(0,7)+"-01T00:00Z");store.set("tb.items",items);render({anim:true,bump:true});$("desc").focus()};
 $("clear").onclick=()=>{items=items.filter(x=>!x.sample);save()};
 $("budget").oninput=e=>{budget=+e.target.value||0;store.set("tb.budget",budget);render()};
-$("prev").onclick=()=>{view.setUTCMonth(view.getUTCMonth()-1);render()}; $("next").onclick=()=>{view.setUTCMonth(view.getUTCMonth()+1);render()};
+$("prev").onclick=()=>{view.setUTCMonth(view.getUTCMonth()-1);render({dir:-1,anim:true})}; $("next").onclick=()=>{view.setUTCMonth(view.getUTCMonth()+1);render({dir:1,anim:true})};
 $("days").onpointermove=e=>{const t=e.target.dataset.t,tip=$("tip");tip.hidden=!t;if(t){tip.textContent=t;tip.style.left=e.clientX+10+"px";tip.style.top=e.clientY-34+"px"}};
 $("days").onpointerleave=()=>$("tip").hidden=true;
-render();
+document.querySelectorAll(".wrap section").forEach((s,i)=>s.style.setProperty("--i",[0,2,1,3,4][i]));
+document.body.classList.add("load");setTimeout(()=>document.body.classList.remove("load"),1200);
+render({anim:true});
 </script>
